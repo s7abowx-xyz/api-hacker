@@ -1,9 +1,8 @@
 {
-  "name": "site-hacker-api",
+  "name": "api-hacker",
   "version": "2.0.0",
   "type": "module",
   "dependencies": {
-    "node-fetch": "^3.3.2",
-    "archiver": "^6.0.1"
+    "node-fetch": "^3.3.2"
   }
 }
