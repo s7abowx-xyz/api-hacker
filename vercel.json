@@ -1,8 +1,14 @@
 {
+  "version": 2,
   "functions": {
-    "api/hack.js": {
-      "runtime": "nodejs18.x",
-      "maxDuration": 60
+    "api/*.js": {
+      "runtime": "nodejs18.x"
     }
-  }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    }
+  ]
 }
