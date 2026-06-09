@@ -1,8 +1,5 @@
 {
-  "name": "api-hacker",
-  "version": "1.0.0",
-  "type": "module",
-  "dependencies": {
-    "node-fetch": "^3.3.2"
-  }
+    "name": "api-hacker",
+    "version": "2.0.0",
+    "description": "منصة اختراق المواقع الاحترافية + API للبوتات"
 }
