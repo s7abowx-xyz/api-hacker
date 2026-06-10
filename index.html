@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WORM HUNTER - اختراق المواقع</title>
+    <title>WORM HUNTER - اختراق المواقع + API</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -152,22 +152,21 @@
             flex-wrap: wrap;
             gap: 10px;
         }
-        .file-url { word-break: break-all; font-size: 0.9rem; }
+        .file-url { word-break: break-all; font-size: 0.9rem; flex: 1; }
         .sensitive-badge {
             background: #ff4444;
             padding: 3px 10px;
             border-radius: 20px;
             font-size: 0.7rem;
         }
-        .download-btn {
+        .view-btn {
             background: rgba(0,255,204,0.2);
             border: 1px solid #00ffcc;
             color: #00ffcc;
-            padding: 8px 15px;
+            padding: 5px 12px;
             border-radius: 5px;
-            text-decoration: none;
-            font-size: 0.8rem;
             cursor: pointer;
+            font-size: 0.7rem;
         }
         .loading {
             text-align: center;
@@ -207,6 +206,10 @@
             color: #666;
             margin-top: 40px;
         }
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2rem; }
+            .file-item { flex-direction: column; align-items: flex-start; }
+        }
     </style>
 </head>
 <body>
@@ -219,7 +222,7 @@
     <div class="container">
         <div class="hero">
             <h1>منصة اختراق المواقع الاحترافية</h1>
-            <p>اكتشف وجلب جميع ملفات أي موقع + API للبوتات</p>
+            <p>اكتشف وجلب جميع ملفات أي موقع + API للبوتات (تيليجرام، واتساب، ديسكورد)</p>
         </div>
 
         <div class="card">
@@ -233,6 +236,7 @@
         <div id="loading" class="loading">
             <div class="spinner"></div>
             <p>جاري استكشاف الموقع وجلب كل الملفات...</p>
+            <p style="font-size: 0.8rem;">قد يستغرق الأمر دقيقة حسب حجم الموقع</p>
         </div>
 
         <div id="results" class="results-section">
@@ -251,65 +255,214 @@
             <div class="api-endpoint" id="apiUrl"></div>
             <p style="font-size: 0.8rem; margin-top: 10px;">
                 <strong>مثال استخدام API:</strong><br>
-                <code>POST /api<br>
-                { "url": "https://example.com" }</code>
+                <code>POST /api<br>{ "url": "https://example.com" }</code>
+            </p>
+            <p style="font-size: 0.8rem;">
+                <strong>للبوتات:</strong> أرسل POST إلى الرابط أعلاه مع JSON يحتوي على url
             </p>
         </div>
 
         <div class="footer">
-            <p>⚠️ للاستخدام القانوني فقط على المواقع التي تملكها</p>
-            <p>🕷️ WORM HUNTER · بدون قيود · API للبوتات</p>
+            <p>⚠️ للاستخدام القانوني فقط على المواقع التي تملكها أو لديك إذن باختبارها</p>
+            <p>🕷️ WORM HUNTER · بدون قيود · يجلب كل الملفات · API للبوتات</p>
         </div>
     </div>
 
     <script>
-        document.getElementById('apiUrl').innerText = window.location.origin + '/api';
+        // قائمة المجلدات الشائعة
+        const COMMON_DIRS = [
+            'admin', 'backup', 'uploads', 'files', 'download', 'wp-admin', 'wp-content',
+            'phpmyadmin', 'mysql', 'database', 'config', '.git', 'api', 'v1', 'v2',
+            'old', 'test', 'dev', 'secret', 'private', 'logs', 'temp', 'tmp',
+            'images', 'css', 'js', 'assets', 'static', 'media', 'includes', 'lib'
+        ];
+
+        // الملفات الحساسة
+        const SENSITIVE_FILES = [
+            '.env', 'config.php', 'wp-config.php', 'database.php', '.git/config',
+            '.gitignore', 'robots.txt', 'backup.sql', 'dump.sql', 'password.txt',
+            'passwords.txt', 'config.json', 'settings.py', 'web.config', 'credentials.txt',
+            'api_keys.txt', 'secret.key', 'id_rsa', 'adminer.php', 'phpinfo.php',
+            'info.php', 'test.php', 'debug.php', 'error_log', 'access.log'
+        ];
+
+        // امتدادات الملفات المهمة
+        const IMPORTANT_NAMES = [
+            'index', 'main', 'config', 'database', 'db', 'app', 'api', 'admin',
+            'login', 'home', 'about', 'contact', 'service', 'user', 'account'
+        ];
+        const EXTENSIONS = ['.php', '.html', '.js', '.css', '.sql', '.json', '.xml', '.txt', '.env', '.log', '.bak', '.yml', '.yaml'];
+
+        let discoveredFiles = [];
+
+        async function fetchWithTimeout(url, timeout = 8000) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            try {
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                return response;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                return null;
+            }
+        }
+
+        async function testFile(url) {
+            try {
+                const response = await fetchWithTimeout(url);
+                if (response && response.status === 200) {
+                    let preview = '';
+                    try {
+                        const text = await response.text();
+                        preview = text.substring(0, 1000);
+                    } catch(e) {}
+                    return {
+                        url: url,
+                        size: response.headers.get('content-length') || 'غير معروف',
+                        preview: preview,
+                        sensitive: SENSITIVE_FILES.some(s => url.toLowerCase().includes(s.toLowerCase()))
+                    };
+                }
+            } catch(e) {}
+            return null;
+        }
+
+        async function scanAllFiles(baseUrl) {
+            const allFiles = [];
+            const seen = new Set();
+
+            // 1. فحص الملفات الحساسة في الجذر
+            for (const sensitive of SENSITIVE_FILES) {
+                const url = `${baseUrl}/${sensitive}`;
+                const file = await testFile(url);
+                if (file && !seen.has(file.url)) {
+                    seen.add(file.url);
+                    allFiles.push(file);
+                }
+            }
+
+            // 2. فحص المجلدات
+            for (const dir of COMMON_DIRS) {
+                // فحص المجلد نفسه
+                const dirUrl = `${baseUrl}/${dir}`;
+                const dirFile = await testFile(dirUrl);
+                if (dirFile && !seen.has(dirFile.url)) {
+                    seen.add(dirFile.url);
+                    allFiles.push(dirFile);
+                }
+
+                // فحص الملفات الحساسة داخل المجلد
+                for (const sensitive of SENSITIVE_FILES) {
+                    const subUrl = `${dirUrl}/${sensitive}`;
+                    const subFile = await testFile(subUrl);
+                    if (subFile && !seen.has(subFile.url)) {
+                        seen.add(subFile.url);
+                        allFiles.push(subFile);
+                    }
+                }
+
+                // فحص الملفات الشائعة داخل المجلد
+                for (const name of IMPORTANT_NAMES) {
+                    for (const ext of EXTENSIONS) {
+                        const fileUrl = `${dirUrl}/${name}${ext}`;
+                        const file = await testFile(fileUrl);
+                        if (file && !seen.has(file.url)) {
+                            seen.add(file.url);
+                            allFiles.push(file);
+                        }
+                    }
+                }
+            }
+
+            // 3. فحص الملفات الشائعة في الجذر
+            for (const name of IMPORTANT_NAMES) {
+                for (const ext of EXTENSIONS) {
+                    const url = `${baseUrl}/${name}${ext}`;
+                    const file = await testFile(url);
+                    if (file && !seen.has(file.url)) {
+                        seen.add(file.url);
+                        allFiles.push(file);
+                    }
+                }
+            }
+
+            return allFiles;
+        }
+
+        // عرض رابط API الصحيح
+        const apiUrl = window.location.origin + '/api';
+        document.getElementById('apiUrl').innerText = apiUrl;
 
         document.getElementById('scanBtn').addEventListener('click', async () => {
-            const targetUrl = document.getElementById('targetUrl').value.trim();
+            let targetUrl = document.getElementById('targetUrl').value.trim();
             if (!targetUrl) {
                 alert('الرجاء إدخال رابط الموقع');
                 return;
             }
 
+            if (!targetUrl.startsWith('http')) {
+                targetUrl = 'https://' + targetUrl;
+            }
+
+            const baseUrl = targetUrl.split('/').slice(0, 3).join('/');
+
             document.getElementById('loading').style.display = 'block';
             document.getElementById('results').classList.remove('show');
+            discoveredFiles = [];
 
             try {
-                const response = await fetch('/api', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: targetUrl })
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    document.getElementById('statsGrid').innerHTML = `
-                        <div class="stat-card"><div class="stat-number">${data.statistics.totalFiles}</div><div class="stat-label">📄 إجمالي الملفات</div></div>
-                        <div class="stat-card"><div class="stat-number">${data.statistics.sensitiveFiles}</div><div class="stat-label">⚠️ ملفات حساسة</div></div>
-                        <div class="stat-card"><div class="stat-number">${data.statistics.directoriesScanned}</div><div class="stat-label">🔍 مجلد تم فحصه</div></div>
-                    `;
-
-                    const allFilesHtml = data.allFiles.map(file => `
-                        <div class="file-item">
-                            <div class="file-url">${escapeHtml(file.url)}</div>
-                            ${file.sensitive ? '<span class="sensitive-badge">⚠️ حساس</span>' : ''}
-                        </div>
-                    `).join('');
-
-                    const sensitiveFilesHtml = data.sensitiveFiles.map(file => `
-                        <div class="file-item">
-                            <div class="file-url">${escapeHtml(file.url)}</div>
-                            <span class="sensitive-badge">⚠️ حساس</span>
-                        </div>
-                    `).join('');
-
-                    document.getElementById('allFiles').innerHTML = allFilesHtml || '<div style="text-align:center;color:#888;">لا توجد ملفات</div>';
-                    document.getElementById('sensitiveFiles').innerHTML = sensitiveFilesHtml || '<div style="text-align:center;color:#888;">لا توجد ملفات حساسة</div>';
-                    document.getElementById('results').classList.add('show');
-                } else {
-                    alert('خطأ: ' + data.error);
+                discoveredFiles = await scanAllFiles(baseUrl);
+                
+                // إزالة التكرارات
+                const uniqueFiles = [];
+                const seen = new Set();
+                for (const file of discoveredFiles) {
+                    if (!seen.has(file.url)) {
+                        seen.add(file.url);
+                        uniqueFiles.push(file);
+                    }
                 }
+                discoveredFiles = uniqueFiles;
+
+                const sensitiveFiles = discoveredFiles.filter(f => f.sensitive);
+                
+                document.getElementById('statsGrid').innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-number">${discoveredFiles.length}</div>
+                        <div class="stat-label">📄 إجمالي الملفات</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${sensitiveFiles.length}</div>
+                        <div class="stat-label">⚠️ ملفات حساسة</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${COMMON_DIRS.length}</div>
+                        <div class="stat-label">🔍 مجلد تم فحصه</div>
+                    </div>
+                `;
+
+                const allFilesHtml = discoveredFiles.map(file => `
+                    <div class="file-item">
+                        <div class="file-url">${escapeHtml(file.url)}</div>
+                        <div style="display: flex; gap: 10px;">
+                            ${file.sensitive ? '<span class="sensitive-badge">⚠️ حساس</span>' : ''}
+                            <button class="view-btn" onclick="viewFile('${escapeHtml(file.url)}', ${JSON.stringify(escapeHtml(file.preview))})">👁️ معاينة</button>
+                        </div>
+                    </div>
+                `).join('');
+
+                const sensitiveFilesHtml = sensitiveFiles.map(file => `
+                    <div class="file-item">
+                        <div class="file-url">${escapeHtml(file.url)}</div>
+                        <button class="view-btn" onclick="viewFile('${escapeHtml(file.url)}', ${JSON.stringify(escapeHtml(file.preview))})">👁️ معاينة</button>
+                    </div>
+                `).join('');
+
+                document.getElementById('allFiles').innerHTML = allFilesHtml || '<div style="text-align:center;color:#888;">لا توجد ملفات</div>';
+                document.getElementById('sensitiveFiles').innerHTML = sensitiveFilesHtml || '<div style="text-align:center;color:#888;">لا توجد ملفات حساسة</div>';
+                
+                document.getElementById('results').classList.add('show');
             } catch (error) {
                 alert('خطأ: ' + error.message);
             } finally {
@@ -325,6 +478,15 @@
                 if (m === '>') return '&gt;';
                 return m;
             });
+        }
+
+        function viewFile(url, preview) {
+            if (preview && preview.length > 0 && preview !== 'null') {
+                const win = window.open();
+                win.document.write('<pre style="background:#0a0a0a;color:#00ffcc;padding:20px;font-family:monospace;white-space:pre-wrap;word-break:break-all;">' + preview + '</pre>');
+            } else {
+                window.open(url, '_blank');
+            }
         }
 
         function showTab(tab, btn) {
